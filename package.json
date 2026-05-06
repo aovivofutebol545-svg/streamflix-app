@@ -1,0 +1,32 @@
+{
+  "name": "streamflix-v2.0.4",
+  "version": "2.0.4",
+  "description": "Streamflix - Filmes e Séries Dubladas em Português",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "build:android": "eas build --platform android --auto-submit",
+    "build:ios": "eas build --platform ios"
+  },
+  "dependencies": {
+    "expo": "^55.0.0",
+    "expo-router": "^55.0.0",
+    "expo-splash-screen": "latest",
+    "react": "^19.0.0",
+    "react-native": "^0.85.0",
+    "react-native-web": "^0.21.0",
+    "react-native-gesture-handler": "latest",
+    "react-native-reanimated": "latest",
+    "axios": "^1.6.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-native": "^0.85.0"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Streamflix Free",
+    "slug": "streamflix-free",
+    "version": "2.0.4",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTabletMode": true,
+      "bundleIdentifier": "com.kaiquealmeida.streamflix"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#0F1419"
+      },
+      "package": "com.kaiquealmeida.streamflix",
+      "permissions": ["INTERNET"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "scheme": "streamflix"
+  }
+}
