@@ -16,7 +16,9 @@
         "backgroundColor": "#0F1419"
       },
       "package": "com.kaiquealmeida.streamflix",
-      "permissions": ["INTERNET"]
+      "permissions": [
+        "INTERNET"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -24,6 +26,13 @@
     "plugins": [
       "expo-router"
     ],
-    "scheme": "streamflix"
+    "scheme": "streamflix",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c473e866-5eb7-4972-a2d9-133ae9c11147"
+      }
+    },
+    "owner": "kaiquealmeida"
   }
 }
