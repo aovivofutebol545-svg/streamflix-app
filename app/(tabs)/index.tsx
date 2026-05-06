@@ -134,13 +134,24 @@ export default function HomeScreen() {
     );
   };
 
+  const SLUGS: Record<string, string> = {
+    'Em Tendência': 'tendencia',
+    'Em Cartaz': 'cartaz',
+    'Dublados PT-BR': 'dublados',
+    'Séries Populares': 'series',
+    'Doramas': 'doramas',
+    'BLs': 'bls',
+    'Animes': 'animes',
+  };
+
   const renderSection = (emoji: string, title: string, data: Content[]) => {
     if (!data?.length) return null;
+    const slug = SLUGS[title] || 'filmes';
     return (
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{emoji} {title}</Text>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push(`/categoria/${slug}?title=${encodeURIComponent(emoji + ' ' + title)}`)}>
             <Text style={styles.seeAll}>Ver tudo</Text>
           </TouchableOpacity>
         </View>
