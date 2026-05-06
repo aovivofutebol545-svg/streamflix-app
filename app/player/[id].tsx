@@ -7,326 +7,254 @@ import {
   ActivityIndicator,
   StatusBar,
   BackHandler,
-  Platform,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { fetchContentDetails } from '../../services/api';
 
-// Fontes de vídeo com prioridade PT-BR
-function getVideoSources(type: 'movie' | 'tv', tmdbId: number, imdbId?: string, season = 1, ep = 1) {
-  const sources = [];
+// Fontes que funcionam DENTRO do WebView (sem redirecionar pro browser)
+function buildSources(type: 'movie' | 'tv', tmdbId: number, imdbId?: string, season = 1, ep = 1) {
+  const id = tmdbId;
+  const sources: { label: string; url: string }[] = [];
 
-  // 1. SuperFlixTV — melhor fonte PT-BR
-  sources.push(`https://superflixapi.dev/filme/${tmdbId}`);
-
-  // 2. VidSrc.cc com lang PT
-  if (imdbId) {
-    sources.push(`https://vidsrc.cc/v2/embed/movie/${imdbId}?autoPlay=1`);
-  }
-
-  // 3. multiembed com locale pt-BR
-  sources.push(`https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`);
-
-  // 4. embedsu
-  if (imdbId) {
-    sources.push(`https://embed.su/embed/${type === 'movie' ? 'movie' : 'tv'}/${imdbId}`);
-  }
-
-  // 5. VidSrc original (fallback)
-  if (imdbId) {
-    if (type === 'movie') {
-      sources.push(`https://vidsrc.to/embed/movie/${imdbId}`);
-    } else {
-      sources.push(`https://vidsrc.to/embed/tv/${imdbId}/${season}/${ep}`);
+  if (type === 'movie') {
+    if (imdbId) {
+      sources.push({ label: 'Fonte 1', url: `https://vidsrc.xyz/embed/movie?imdb=${imdbId}` });
+      sources.push({ label: 'Fonte 2', url: `https://vidsrc.cc/v2/embed/movie/${imdbId}` });
+      sources.push({ label: 'Fonte 3', url: `https://player.videasy.net/movie/${imdbId}` });
     }
+    sources.push({ label: 'Fonte 4', url: `https://multiembed.mov/directstream.php?video_id=${id}&tmdb=1` });
+    sources.push({ label: 'Fonte 5', url: `https://www.2embed.cc/embed/${id}` });
+  } else {
+    if (imdbId) {
+      sources.push({ label: 'Fonte 1', url: `https://vidsrc.xyz/embed/tv?imdb=${imdbId}&season=${season}&episode=${ep}` });
+      sources.push({ label: 'Fonte 2', url: `https://vidsrc.cc/v2/embed/tv/${imdbId}/${season}/${ep}` });
+      sources.push({ label: 'Fonte 3', url: `https://player.videasy.net/tv/${imdbId}/${season}/${ep}` });
+    }
+    sources.push({ label: 'Fonte 4', url: `https://multiembed.mov/directstream.php?video_id=${id}&tmdb=1&s=${season}&e=${ep}` });
+    sources.push({ label: 'Fonte 5', url: `https://www.2embed.cc/embedtv/${id}&s=${season}&e=${ep}` });
   }
 
   return sources;
 }
 
+// HTML que injeta o player sem abrir navegador externo
+function buildHTML(embedUrl: string) {
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;background:#000;overflow:hidden}
+  iframe{width:100vw;height:100vh;border:none}
+</style>
+</head>
+<body>
+<iframe
+  src="${embedUrl}"
+  allowfullscreen
+  allow="autoplay;fullscreen;picture-in-picture;encrypted-media"
+  sandbox="allow-scripts allow-same-origin allow-forms allow-popups-to-escape-sandbox"
+></iframe>
+<script>
+  // Bloqueia redirecionamentos externos
+  window.open = function(url){ return null; };
+  document.addEventListener('click', function(e){
+    var el = e.target;
+    while(el){
+      if(el.tagName === 'A' && el.href && !el.href.includes(location.hostname)){
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      el = el.parentElement;
+    }
+  }, true);
+</script>
+</body>
+</html>`;
+}
+
 export default function PlayerScreen() {
   const { id, type: paramType, season, episode } = useLocalSearchParams<{
-    id: string;
-    type?: string;
-    season?: string;
-    episode?: string;
+    id: string; type?: string; season?: string; episode?: string;
   }>();
   const router = useRouter();
   const webviewRef = useRef<any>(null);
-  const [sourceIndex, setSourceIndex] = useState(0);
-  const [sources, setSources] = useState<string[]>([]);
+  const [sources, setSources] = useState<{ label: string; url: string }[]>([]);
+  const [srcIndex, setSrcIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState('');
+  const [showSources, setShowSources] = useState(false);
 
   useEffect(() => {
     lockLandscape();
-    activateKeepAwakeAsync();
-
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBack);
-
     if (id) loadVideo();
-
-    return () => {
-      unlockOrientation();
-      deactivateKeepAwake();
-      backHandler.remove();
-    };
+    const back = BackHandler.addEventListener('hardwareBackPress', handleBack);
+    return () => { unlockOrientation(); back.remove(); };
   }, [id]);
 
   const lockLandscape = async () => {
-    try {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-    } catch (e) {}
+    try { await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE); } catch {}
   };
-
   const unlockOrientation = async () => {
-    try {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-    } catch (e) {}
+    try { await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP); } catch {}
   };
-
-  const handleBack = () => {
-    unlockOrientation();
-    router.back();
-    return true;
-  };
+  const handleBack = () => { unlockOrientation(); router.back(); return true; };
 
   const loadVideo = async () => {
     try {
       setLoading(true);
       setError(null);
-
-      const mediaType = (paramType as 'movie' | 'tv') || 'movie';
       const s = parseInt(season || '1');
       const e = parseInt(episode || '1');
 
       let details = await fetchContentDetails('movie', parseInt(id || '0'));
-      let detectedType: 'movie' | 'tv' = 'movie';
-
-      if (!details || !details.title) {
+      let mediaType: 'movie' | 'tv' = 'movie';
+      if (!details?.title) {
         details = await fetchContentDetails('tv', parseInt(id || '0'));
-        detectedType = 'tv';
+        mediaType = 'tv';
       }
 
       const imdbId = details?.imdb_id || details?.external_ids?.imdb_id;
-      const t = details?.title || details?.name || '';
-      setTitle(t);
-
-      const srcs = getVideoSources(detectedType, parseInt(id || '0'), imdbId, s, e);
+      setTitle(details?.title || details?.name || '');
+      const srcs = buildSources(mediaType, parseInt(id || '0'), imdbId, s, e);
       setSources(srcs);
-      setSourceIndex(0);
-    } catch (err) {
+      setSrcIndex(0);
+    } catch {
       setError('Erro ao carregar. Tente novamente.');
     } finally {
       setLoading(false);
     }
   };
 
-  const tryNextSource = () => {
-    if (sourceIndex < sources.length - 1) {
-      setSourceIndex(sourceIndex + 1);
-    } else {
-      setError('Nenhuma fonte disponível no momento.');
+  const currentSource = sources[srcIndex];
+
+  // Bloqueia navegação externa no WebView
+  const handleNavChange = (navState: any) => {
+    const url: string = navState.url || '';
+    // Permite apenas URLs dos embeds conhecidos
+    const allowed = [
+      'vidsrc.xyz', 'vidsrc.cc', 'multiembed.mov',
+      '2embed.cc', 'videasy.net', 'about:blank', 'blob:'
+    ];
+    const isAllowed = allowed.some(d => url.includes(d)) || url.startsWith('data:');
+    if (!isAllowed && url !== 'about:blank' && !url.startsWith('data:')) {
+      webviewRef.current?.stopLoading();
+      webviewRef.current?.goBack();
     }
   };
 
-  const currentUrl = sources[sourceIndex];
+  if (loading) {
+    return (
+      <View style={s.center}><StatusBar hidden />
+        <ActivityIndicator size="large" color="#E50914" />
+        <Text style={s.loadTxt}>Carregando...</Text>
+      </View>
+    );
+  }
 
-  // HTML wrapper que força PT-BR e full screen
-  const htmlContent = currentUrl ? `
-    <!DOCTYPE html>
-    <html lang="pt-BR">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { 
-          width: 100%; height: 100%; 
-          background: #000; 
-          overflow: hidden;
-        }
-        iframe {
-          width: 100vw;
-          height: 100vh;
-          border: none;
-          display: block;
-        }
-      </style>
-    </head>
-    <body>
-      <iframe 
-        src="${currentUrl}"
-        allowfullscreen
-        allow="autoplay; fullscreen; picture-in-picture"
-        scrolling="no"
-        referrerpolicy="no-referrer"
-      ></iframe>
-      <script>
-        // Tenta forçar fullscreen
-        setTimeout(() => {
-          const iframe = document.querySelector('iframe');
-          if (iframe && iframe.requestFullscreen) iframe.requestFullscreen();
-        }, 2000);
-      </script>
-    </body>
-    </html>
-  ` : '';
+  if (error || !currentSource) {
+    return (
+      <View style={s.center}><StatusBar hidden />
+        <Text style={{ fontSize: 44, marginBottom: 10 }}>😕</Text>
+        <Text style={s.errTxt}>{error || 'Sem fontes disponíveis'}</Text>
+        <TouchableOpacity style={s.btn} onPress={loadVideo}>
+          <Text style={s.btnTxt}>Tentar novamente</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[s.btn, { backgroundColor: '#333', marginTop: 8 }]} onPress={handleBack}>
+          <Text style={s.btnTxt}>← Voltar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
+    <View style={s.root}>
       <StatusBar hidden />
 
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#E50914" />
-          <Text style={styles.loadingText}>Carregando...</Text>
-        </View>
-      ) : error ? (
-        <View style={styles.center}>
-          <Text style={styles.errorEmoji}>😕</Text>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.btn} onPress={loadVideo}>
-            <Text style={styles.btnText}>Tentar novamente</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.btn, styles.btnSecondary]} onPress={handleBack}>
-            <Text style={styles.btnText}>← Voltar</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <>
-          <WebView
-            ref={webviewRef}
-            source={{ html: htmlContent, baseUrl: currentUrl }}
-            style={styles.webview}
-            javaScriptEnabled
-            domStorageEnabled
-            allowsFullscreenVideo
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            onError={tryNextSource}
-            onHttpError={tryNextSource}
-            originWhitelist={['*']}
-            mixedContentMode="always"
-            userAgent="Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
-          />
+      <WebView
+        ref={webviewRef}
+        source={{ html: buildHTML(currentSource.url) }}
+        style={s.webview}
+        javaScriptEnabled
+        domStorageEnabled
+        allowsFullscreenVideo
+        allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction={false}
+        mixedContentMode="always"
+        originWhitelist={['*']}
+        onNavigationStateChange={handleNavChange}
+        onShouldStartLoadWithRequest={(req) => {
+          const url = req.url;
+          const allowed = ['vidsrc.xyz','vidsrc.cc','multiembed.mov','2embed.cc','videasy.net','about:blank','blob:','data:'];
+          return allowed.some(d => url.includes(d)) || url.startsWith('data:') || url.startsWith('blob:');
+        }}
+        userAgent="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+      />
 
-          {/* Controles flutuantes */}
-          <View style={styles.controls}>
-            <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
-              <Text style={styles.backBtnText}>✕</Text>
+      {/* Barra superior */}
+      <View style={s.topBar}>
+        <TouchableOpacity style={s.closeBtn} onPress={handleBack}>
+          <Text style={s.closeTxt}>✕</Text>
+        </TouchableOpacity>
+        {!!title && <Text style={s.titleTxt} numberOfLines={1}>{title}</Text>}
+        <TouchableOpacity style={s.srcBtn} onPress={() => setShowSources(!showSources)}>
+          <Text style={s.srcBtnTxt}>{currentSource.label} ▾</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Menu de fontes */}
+      {showSources && (
+        <View style={s.srcMenu}>
+          {sources.map((src, i) => (
+            <TouchableOpacity
+              key={i}
+              style={[s.srcItem, i === srcIndex && s.srcItemActive]}
+              onPress={() => { setSrcIndex(i); setShowSources(false); }}
+            >
+              <Text style={[s.srcItemTxt, i === srcIndex && { color: '#fff', fontWeight: '700' }]}>
+                {src.label} {i === srcIndex ? '✓' : ''}
+              </Text>
             </TouchableOpacity>
-
-            {title ? (
-              <Text style={styles.titleText} numberOfLines={1}>{title}</Text>
-            ) : null}
-
-            {sources.length > 1 && (
-              <TouchableOpacity style={styles.sourceBtn} onPress={tryNextSource}>
-                <Text style={styles.sourceBtnText}>
-                  Fonte {sourceIndex + 1}/{sources.length}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </>
+          ))}
+        </View>
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#000' },
+  webview: { flex: 1, backgroundColor: '#000' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000', padding: 20 },
+  loadTxt: { color: '#fff', marginTop: 12, fontSize: 15 },
+  errTxt: { color: '#aaa', fontSize: 14, textAlign: 'center', marginBottom: 20 },
+  btn: { backgroundColor: '#E50914', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10, minWidth: 180, alignItems: 'center' },
+  btnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  topBar: {
+    position: 'absolute', top: 0, left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: 'rgba(0,0,0,0.65)',
   },
-  webview: {
-    flex: 1,
-    backgroundColor: '#000',
+  closeBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
+  closeTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  titleTxt: { flex: 1, color: '#fff', fontSize: 13, fontWeight: '600' },
+  srcBtn: { backgroundColor: 'rgba(229,9,20,0.85)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  srcBtnTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  srcMenu: {
+    position: 'absolute', top: 50, right: 12,
+    backgroundColor: '#1A1F2E',
+    borderRadius: 12, overflow: 'hidden',
+    borderWidth: 1, borderColor: '#2A3350',
+    minWidth: 120,
   },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000',
-    padding: 20,
-  },
-  loadingText: {
-    color: '#fff',
-    marginTop: 12,
-    fontSize: 15,
-  },
-  errorEmoji: {
-    fontSize: 48,
-    marginBottom: 12,
-  },
-  errorText: {
-    color: '#fff',
-    fontSize: 15,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  btn: {
-    backgroundColor: '#E50914',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 10,
-    marginBottom: 10,
-    minWidth: 180,
-    alignItems: 'center',
-  },
-  btnSecondary: {
-    backgroundColor: '#333',
-  },
-  btnText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  controls: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  backBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  titleText: {
-    flex: 1,
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  sourceBtn: {
-    backgroundColor: 'rgba(229,9,20,0.8)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  sourceBtnText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  srcItem: { paddingHorizontal: 16, paddingVertical: 12 },
+  srcItemActive: { backgroundColor: '#E50914' },
+  srcItemTxt: { color: '#aaa', fontSize: 13 },
 });

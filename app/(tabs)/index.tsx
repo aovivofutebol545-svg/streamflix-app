@@ -27,6 +27,7 @@ import {
 } from '../../services/api';
 import { MovieCard } from '../../components/MovieCard';
 import { SearchBar } from '../../components/SearchBar';
+import { GenreWidget, FavoritesWidget, QuickSearchWidget } from '../../components/HomeWidgets';
 
 const { width } = Dimensions.get('window');
 
@@ -219,8 +220,17 @@ export default function HomeScreen() {
           onFocus={() => router.push('/(tabs)/busca')}
         />
 
+        {/* Quick search chips */}
+        <QuickSearchWidget />
+
         {/* Banner rotativo */}
         {renderBanner()}
+
+        {/* Favoritos widget */}
+        <FavoritesWidget />
+
+        {/* Gêneros */}
+        <GenreWidget />
 
         {/* Seções */}
         {renderSection('🔥', 'Em Tendência', trending.slice(1))}
