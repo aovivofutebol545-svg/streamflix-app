@@ -5,13 +5,11 @@ import {
   Text,
   Image,
   TouchableOpacity,
-  Dimensions,
 } from 'react-native';
-import { THEME } from '../constants/colors';
 import { getImageUrl } from '../services/api';
 
-const { width } = Dimensions.get('window');
-const cardWidth = (width - 48) / 2;
+const CARD_WIDTH = 120;
+const CARD_HEIGHT = 178;
 
 interface MovieCardProps {
   id: number;
@@ -21,70 +19,86 @@ interface MovieCardProps {
   onPress: () => void;
 }
 
-export function MovieCard({
-  id,
-  title,
-  posterPath,
-  voteAverage,
-  onPress,
-}: MovieCardProps) {
+export function MovieCard({ title, posterPath, voteAverage, onPress }: MovieCardProps) {
   const imageUrl = getImageUrl(posterPath, 'w342');
+  const rating = voteAverage ? voteAverage.toFixed(1) : '?';
+  const ratingColor = voteAverage >= 7 ? '#22C55E' : voteAverage >= 5 ? '#F59E0B' : '#EF4444';
 
   return (
-    <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.8}>
-      <View style={styles.posterContainer}>
-        <Image
-          source={{ uri: imageUrl || 'https://via.placeholder.com/342x513?text=Sem+Capa' }}
-          style={styles.poster}
-        />
-        <View style={styles.ratingBadge}>
-          <Text style={styles.rating}>{voteAverage.toFixed(1)}</Text>
+    <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.75}>
+      <View style={styles.posterWrap}>
+        {imageUrl ? (
+          <Image source={{ uri: imageUrl }} style={styles.poster} />
+        ) : (
+          <View style={[styles.poster, styles.placeholder]}>
+            <Text style={styles.placeholderText}>🎬</Text>
+          </View>
+        )}
+        <View style={[styles.badge, { backgroundColor: ratingColor }]}>
+          <Text style={styles.badgeText}>{rating}</Text>
         </View>
+        {/* Gradient bottom */}
+        <View style={styles.gradient} />
       </View>
-      <Text style={styles.title} numberOfLines={2}>
-        {title}
-      </Text>
+      <Text style={styles.title} numberOfLines={2}>{title}</Text>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    width: cardWidth,
-    marginHorizontal: THEME.spacing.md / 2,
-    marginBottom: THEME.spacing.lg,
+    width: CARD_WIDTH,
+    marginRight: 10,
   },
-  posterContainer: {
-    position: 'relative',
-    width: '100%',
-    aspectRatio: 2 / 3,
-    borderRadius: THEME.borderRadius.md,
+  posterWrap: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: THEME.colors.surface,
-    marginBottom: THEME.spacing.sm,
+    backgroundColor: '#1A1F2E',
+    marginBottom: 6,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
   },
   poster: {
     width: '100%',
     height: '100%',
   },
-  ratingBadge: {
-    position: 'absolute',
-    top: THEME.spacing.sm,
-    right: THEME.spacing.sm,
-    backgroundColor: THEME.colors.primary,
-    borderRadius: 20,
-    paddingHorizontal: THEME.spacing.sm,
-    paddingVertical: 4,
+  placeholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  rating: {
-    color: THEME.colors.text,
-    fontSize: 12,
-    fontWeight: '600',
+  placeholderText: {
+    fontSize: 32,
+  },
+  badge: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  gradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 50,
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
   title: {
-    color: THEME.colors.text,
-    fontSize: 12,
+    color: '#C8CEDF',
+    fontSize: 11,
     fontWeight: '500',
-    height: 32,
+    lineHeight: 15,
   },
 });

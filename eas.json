@@ -5,24 +5,21 @@
   },
   "build": {
     "production": {
-      "node": "20.0.0",
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.themoviedb.org/3"
+      "android": {
+        "buildType": "apk"
       }
     },
     "preview": {
-      "node": "20.0.0"
+      "android": {
+        "buildType": "apk"
+      }
     },
     "development": {
-      "node": "20.0.0",
-      "developmentClient": true
+      "developmentClient": true,
+      "distribution": "internal"
     }
   },
   "submit": {
-    "production": {
-      "android": {
-        "track": "internal"
-      }
-    }
+    "production": {}
   }
 }

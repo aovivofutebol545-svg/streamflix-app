@@ -3,11 +3,12 @@
     "name": "Streamflix Free",
     "slug": "streamflix-free",
     "version": "2.0.4",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "orientation": "portrait",
+    "scheme": "streamflix",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": ["**/*"],
     "ios": {
-      "supportsTabletMode": true,
+      "supportsTablet": true,
       "bundleIdentifier": "com.kaiquealmeida.streamflix"
     },
     "android": {
@@ -16,19 +17,33 @@
         "backgroundColor": "#0F1419"
       },
       "package": "com.kaiquealmeida.streamflix",
-      "permissions": [
-        "INTERNET"
-      ]
+      "permissions": ["android.permission.INTERNET"]
     },
     "web": {
+      "bundler": "metro",
+      "output": "static",
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0A0C14",
+          "image": "./assets/splash.png",
+          "imageWidth": 200,
+          "resizeMode": "contain"
+        }
+      ],
+      "expo-screen-orientation"
     ],
-    "scheme": "streamflix",
+    "experiments": {
+      "typedRoutes": true
+    },
     "extra": {
-      "router": {},
+      "router": {
+        "origin": false
+      },
       "eas": {
         "projectId": "c473e866-5eb7-4972-a2d9-133ae9c11147"
       }
