@@ -44,6 +44,7 @@ export default function RootLayout() {
         <Stack.Screen name="details/[id]" />
         <Stack.Screen name="player/[id]" />
         <Stack.Screen name="categoria/[slug]" />
+        <Stack.Screen name="categoria/genero" />
       </Stack>
 
       {/* Só mostra fora do player */}
