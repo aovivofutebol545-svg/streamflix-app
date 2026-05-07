@@ -8,35 +8,73 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { fetchContentDetails } from '../../services/api';
 
-// Fontes testadas que funcionam no WebView sem sandbox
-function buildSources(type: 'movie' | 'tv', tmdbId: number, imdbId?: string, season = 1, ep = 1) {
-  const sources: { label: string; url: string }[] = [];
+// Prioridade: fontes brasileiras PT-BR primeiro
+function buildSources(
+  type: 'movie' | 'tv',
+  tmdbId: number,
+  imdbId?: string,
+  season = 1,
+  ep = 1
+): { label: string; url: string; ptbr: boolean }[] {
+  const sources: { label: string; url: string; ptbr: boolean }[] = [];
 
-  if (imdbId) {
-    if (type === 'movie') {
-      // Fonte 1 — vidsrc.xyz direto (sem iframe wrapper)
-      sources.push({ label: 'Fonte 1', url: `https://vidsrc.xyz/embed/movie/${imdbId}` });
-      // Fonte 2 — embedsu
-      sources.push({ label: 'Fonte 2', url: `https://embed.su/embed/movie/${imdbId}` });
-      // Fonte 3 — autoembed
-      sources.push({ label: 'Fonte 3', url: `https://autoembed.co/movie/imdb/${imdbId}` });
-      // Fonte 4 — vidsrc.me
-      sources.push({ label: 'Fonte 4', url: `https://vidsrc.me/embed/movie?imdb=${imdbId}` });
-    } else {
-      sources.push({ label: 'Fonte 1', url: `https://vidsrc.xyz/embed/tv/${imdbId}/${season}/${ep}` });
-      sources.push({ label: 'Fonte 2', url: `https://embed.su/embed/tv/${imdbId}/${season}/${ep}` });
-      sources.push({ label: 'Fonte 3', url: `https://autoembed.co/tv/imdb/${imdbId}-${season}-${ep}` });
-      sources.push({ label: 'Fonte 4', url: `https://vidsrc.me/embed/tv?imdb=${imdbId}&season=${season}&episode=${ep}` });
-    }
-  }
-
-  // Fontes com TMDB ID (fallback sem imdb)
   if (type === 'movie') {
-    sources.push({ label: 'Fonte 5', url: `https://vidsrc.xyz/embed/movie/${tmdbId}` });
-    sources.push({ label: 'Fonte 6', url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1` });
+    // ===== PT-BR PRIMEIRO =====
+    if (imdbId) {
+      sources.push({
+        label: '🇧🇷 SuperFlix',
+        url: `https://superflixapi.dev/filme/${imdbId}`,
+        ptbr: true,
+      });
+      sources.push({
+        label: '🇧🇷 WarezCDN',
+        url: `https://embed.warezcdn.link/filme/${imdbId}`,
+        ptbr: true,
+      });
+      sources.push({
+        label: '🇧🇷 CineHD',
+        url: `https://cinemahdplus.xyz/embed/movie/${imdbId}`,
+        ptbr: true,
+      });
+    }
+    sources.push({
+      label: '🇧🇷 SuperFlix TMDB',
+      url: `https://superflixapi.dev/filme/${tmdbId}`,
+      ptbr: true,
+    });
+
+    // ===== FALLBACK INGLÊS =====
+    if (imdbId) {
+      sources.push({ label: 'VidSrc', url: `https://vidsrc.xyz/embed/movie/${imdbId}`, ptbr: false });
+      sources.push({ label: 'EmbedSU', url: `https://embed.su/embed/movie/${imdbId}`, ptbr: false });
+      sources.push({ label: 'AutoEmbed', url: `https://autoembed.co/movie/imdb/${imdbId}`, ptbr: false });
+      sources.push({ label: 'VidSrc.me', url: `https://vidsrc.me/embed/movie?imdb=${imdbId}`, ptbr: false });
+    }
+    sources.push({ label: 'MultiEmbed', url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`, ptbr: false });
+
   } else {
-    sources.push({ label: 'Fonte 5', url: `https://vidsrc.xyz/embed/tv/${tmdbId}/${season}/${ep}` });
-    sources.push({ label: 'Fonte 6', url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1&s=${season}&e=${ep}` });
+    // ===== SÉRIE PT-BR =====
+    if (imdbId) {
+      sources.push({
+        label: '🇧🇷 SuperFlix',
+        url: `https://superflixapi.dev/serie/${imdbId}/${season}/${ep}`,
+        ptbr: true,
+      });
+      sources.push({
+        label: '🇧🇷 WarezCDN',
+        url: `https://embed.warezcdn.link/serie/${imdbId}/${season}/${ep}`,
+        ptbr: true,
+      });
+    }
+
+    // ===== FALLBACK =====
+    if (imdbId) {
+      sources.push({ label: 'VidSrc', url: `https://vidsrc.xyz/embed/tv/${imdbId}/${season}/${ep}`, ptbr: false });
+      sources.push({ label: 'EmbedSU', url: `https://embed.su/embed/tv/${imdbId}/${season}/${ep}`, ptbr: false });
+      sources.push({ label: 'AutoEmbed', url: `https://autoembed.co/tv/imdb/${imdbId}-${season}-${ep}`, ptbr: false });
+      sources.push({ label: 'VidSrc.me', url: `https://vidsrc.me/embed/tv?imdb=${imdbId}&season=${season}&episode=${ep}`, ptbr: false });
+    }
+    sources.push({ label: 'MultiEmbed', url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1&s=${season}&e=${ep}`, ptbr: false });
   }
 
   return sources;
@@ -48,7 +86,7 @@ export default function PlayerScreen() {
   }>();
   const router = useRouter();
   const webviewRef = useRef<any>(null);
-  const [sources, setSources] = useState<{ label: string; url: string }[]>([]);
+  const [sources, setSources] = useState<{ label: string; url: string; ptbr: boolean }[]>([]);
   const [srcIndex, setSrcIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [webLoading, setWebLoading] = useState(true);
@@ -134,7 +172,6 @@ export default function PlayerScreen() {
     <View style={s.root}>
       <StatusBar hidden />
 
-      {/* WebView com URL direta — sem iframe wrapper para evitar sandbox */}
       <WebView
         ref={webviewRef}
         source={{ uri: currentSource.url }}
@@ -149,18 +186,14 @@ export default function PlayerScreen() {
         onLoadStart={() => setWebLoading(true)}
         onLoadEnd={() => setWebLoading(false)}
         onError={nextSource}
-        onHttpError={(e) => {
-          if (e.nativeEvent.statusCode >= 400) nextSource();
-        }}
+        onHttpError={(e) => { if (e.nativeEvent.statusCode >= 400) nextSource(); }}
         userAgent="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
         injectedJavaScript={`
-          // Remove popups e overlays de anúncios
           (function() {
-            var style = document.createElement('style');
-            style.innerHTML = '* { pointer-events: auto !important; } iframe[src*="ads"], div[id*="ad"], div[class*="ad-"], .overlay-ad { display: none !important; }';
-            document.head.appendChild(style);
-            // Bloqueia window.open
             window.open = function() { return null; };
+            var style = document.createElement('style');
+            style.innerHTML = 'iframe[src*="ads"],div[id*="ad-"],div[class*="ad-banner"],.overlay,.popup{display:none!important}';
+            document.head && document.head.appendChild(style);
           })();
           true;
         `}
@@ -171,6 +204,11 @@ export default function PlayerScreen() {
         <View style={s.webLoadingOverlay}>
           <ActivityIndicator size="large" color="#E50914" />
           <Text style={s.loadTxt}>Carregando player...</Text>
+          {currentSource.ptbr && (
+            <View style={s.ptbrBadge}>
+              <Text style={s.ptbrTxt}>🇧🇷 Fonte PT-BR</Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -188,6 +226,7 @@ export default function PlayerScreen() {
       {/* Menu de fontes */}
       {showSources && (
         <View style={s.srcMenu}>
+          <Text style={s.srcMenuTitle}>Selecionar fonte:</Text>
           {sources.map((src, i) => (
             <TouchableOpacity
               key={i}
@@ -215,10 +254,14 @@ const s = StyleSheet.create({
   btnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
   webLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center', alignItems: 'center',
   },
+  ptbrBadge: {
+    marginTop: 16, backgroundColor: '#15803D',
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+  },
+  ptbrTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
   topBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center',
@@ -236,11 +279,16 @@ const s = StyleSheet.create({
   srcBtnTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
   srcMenu: {
     position: 'absolute', top: 50, right: 12,
-    backgroundColor: '#1A1F2E', borderRadius: 12, overflow: 'hidden',
-    borderWidth: 1, borderColor: '#2A3350', minWidth: 130,
+    backgroundColor: '#1A1F2E', borderRadius: 14, overflow: 'hidden',
+    borderWidth: 1, borderColor: '#2A3350', minWidth: 180,
     elevation: 10,
+  },
+  srcMenuTitle: {
+    color: '#8892AA', fontSize: 11, fontWeight: '600',
+    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6,
+    textTransform: 'uppercase', letterSpacing: 1,
   },
   srcItem: { paddingHorizontal: 16, paddingVertical: 12 },
   srcItemActive: { backgroundColor: '#E50914' },
-  srcItemTxt: { color: '#aaa', fontSize: 13 },
+  srcItemTxt: { color: '#C8CEDF', fontSize: 13 },
 });
