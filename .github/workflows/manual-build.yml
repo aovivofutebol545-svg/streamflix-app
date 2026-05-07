@@ -1,0 +1,55 @@
+name: Manual Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: 'Build notes'
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+      
+      - name: Install dependencies
+        run: bun install
+      
+      - name: Setup EAS
+        run: |
+          bun install -g eas-cli
+          npm install -g expo-cli
+      
+      - name: Build APK
+        run: |
+          expo export --platform android --output-dir=dist
+      
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: streamflix-apk
+          path: dist/
+          retention-days: 30
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v-${{ github.run_number }}
+          release_name: Streamflix Build ${{ github.run_number }}
+          body: |
+            APK compilado com sucesso!
+            Build: ${{ github.run_number }}
+            Notas: ${{ github.event.inputs.notes }}
