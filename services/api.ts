@@ -3,11 +3,11 @@ import axios, { AxiosInstance } from 'axios';
 // ─────────────────────────────────────────────────────────────
 // STREAMFLIX — URLs dos servidores
 // ─────────────────────────────────────────────────────────────
-const SCRAPER_URL  = 'https://streamflix-scraper-production.up.railway.app'; // Railway — extrai m3u8 direto
-const RESOLVER_URL = 'https://soothing-lamentation366.runable.site/api';     // Runable — fallback com embeds
+const SCRAPER_URL  = 'https://streamflix-scraper-production.up.railway.app'; // Railway — desabilitado por enquanto
+const RESOLVER_URL = 'https://soothing-lamentation366.runable.site/api';     // Runable — principal
 
 // ─────────────────────────────────────────────────────────────
-// fetchStreamSources — tenta scraper primeiro, fallback no resolver
+// fetchStreamSources — tenta resolver + embeds limpos
 // Retorna o mesmo formato que buildSources() usava antes
 // ─────────────────────────────────────────────────────────────
 export async function fetchStreamSources(
@@ -18,7 +18,33 @@ export async function fetchStreamSources(
   episode = 1
 ): Promise<{ label: string; url: string; ptbr: boolean }[]> {
 
-  // 1️⃣ Tenta scraper Railway — retorna link .m3u8 direto (sem anúncio)
+  // 1️⃣ Tenta Resolver Runable — retorna embeds com prioridade PT-BR
+  try {
+    const params = new URLSearchParams({ type });
+    if (imdbId) params.set('imdb', imdbId);
+    if (type === 'tv') {
+      params.set('season', String(season));
+      params.set('episode', String(episode));
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+    const res = await fetch(`${RESOLVER_URL}/resolve/embed/${tmdbId}?${params}`, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    const data = await res.json();
+
+    if (data.success && data.sources?.length > 0) {
+      console.log(`[RESOLVER] ${data.sources.length} fonte(s) — playUrl: ${data.playUrl}`);
+      // Retorna fontes PT-BR primeiro
+      return data.sources.sort((a: any) => (a.ptbr ? -1 : 1));
+    }
+  } catch (err) {
+    console.log('[RESOLVER] falhou', err);
+  }
+
+  // 2️⃣ Fallback — tenta scraper (pode falhar em headless, por isso é fallback)
   try {
     const params = new URLSearchParams({ type, tmdb: String(tmdbId) });
     if (imdbId) params.set('imdb', imdbId);
@@ -28,7 +54,7 @@ export async function fetchStreamSources(
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000); // 25s timeout
+    const timeout = setTimeout(() => controller.abort(), 20000); // 20s timeout
 
     const res = await fetch(`${SCRAPER_URL}/extract?${params}`, { signal: controller.signal });
     clearTimeout(timeout);
@@ -36,8 +62,7 @@ export async function fetchStreamSources(
     const data = await res.json();
 
     if (data.success && data.sources?.length > 0) {
-      console.log(`[SCRAPER] ${data.sources.length} fonte(s) encontrada(s) — playUrl: ${data.playUrl}`);
-      // Mapeia pro formato esperado pelo player
+      console.log(`[SCRAPER] ${data.sources.length} fonte(s) encontrada(s)`);
       return data.sources.map((s: any) => ({
         label: s.label,
         url: s.directUrl || s.url,
@@ -45,27 +70,7 @@ export async function fetchStreamSources(
       }));
     }
   } catch (err) {
-    console.log('[SCRAPER] falhou ou timeout, usando fallback...', err);
-  }
-
-  // 2️⃣ Fallback — Resolver Runable (embeds, pode ter anúncio mas funciona)
-  try {
-    const params = new URLSearchParams({ type });
-    if (imdbId) params.set('imdb', imdbId);
-    if (type === 'tv') {
-      params.set('season', String(season));
-      params.set('episode', String(episode));
-    }
-
-    const res = await fetch(`${RESOLVER_URL}/resolve/embed/${tmdbId}?${params}`);
-    const data = await res.json();
-
-    if (data.success && data.sources?.length > 0) {
-      console.log(`[RESOLVER] fallback com ${data.sources.length} fonte(s)`);
-      return data.sources;
-    }
-  } catch (err) {
-    console.log('[RESOLVER] fallback também falhou', err);
+    console.log('[SCRAPER] timeout ou erro', err);
   }
 
   return [];
