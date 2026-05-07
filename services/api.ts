@@ -1,13 +1,15 @@
 import axios, { AxiosInstance } from 'axios';
 
-// ─────────────────────────────────────────────
-// STREAMFLIX RESOLVER — URL pública
-// ─────────────────────────────────────────────
-const RESOLVER_URL = 'https://soothing-lamentation366.runable.site/api';
+// ─────────────────────────────────────────────────────────────
+// STREAMFLIX — URLs dos servidores
+// ─────────────────────────────────────────────────────────────
+const SCRAPER_URL  = 'https://streamflix-scraper-production.up.railway.app'; // Railway — extrai m3u8 direto
+const RESOLVER_URL = 'https://soothing-lamentation366.runable.site/api';     // Runable — fallback com embeds
 
-// ─────────────────────────────────────────────
-// Busca fontes remotas via Resolver (substitui buildSources local)
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// fetchStreamSources — tenta scraper primeiro, fallback no resolver
+// Retorna o mesmo formato que buildSources() usava antes
+// ─────────────────────────────────────────────────────────────
 export async function fetchStreamSources(
   type: 'movie' | 'tv',
   tmdbId: number,
@@ -15,6 +17,38 @@ export async function fetchStreamSources(
   season = 1,
   episode = 1
 ): Promise<{ label: string; url: string; ptbr: boolean }[]> {
+
+  // 1️⃣ Tenta scraper Railway — retorna link .m3u8 direto (sem anúncio)
+  try {
+    const params = new URLSearchParams({ type, tmdb: String(tmdbId) });
+    if (imdbId) params.set('imdb', imdbId);
+    if (type === 'tv') {
+      params.set('season', String(season));
+      params.set('episode', String(episode));
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000); // 25s timeout
+
+    const res = await fetch(`${SCRAPER_URL}/extract?${params}`, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    const data = await res.json();
+
+    if (data.success && data.sources?.length > 0) {
+      console.log(`[SCRAPER] ${data.sources.length} fonte(s) encontrada(s) — playUrl: ${data.playUrl}`);
+      // Mapeia pro formato esperado pelo player
+      return data.sources.map((s: any) => ({
+        label: s.label,
+        url: s.directUrl || s.url,
+        ptbr: s.ptbr,
+      }));
+    }
+  } catch (err) {
+    console.log('[SCRAPER] falhou ou timeout, usando fallback...', err);
+  }
+
+  // 2️⃣ Fallback — Resolver Runable (embeds, pode ter anúncio mas funciona)
   try {
     const params = new URLSearchParams({ type });
     if (imdbId) params.set('imdb', imdbId);
@@ -22,25 +56,28 @@ export async function fetchStreamSources(
       params.set('season', String(season));
       params.set('episode', String(episode));
     }
+
     const res = await fetch(`${RESOLVER_URL}/resolve/embed/${tmdbId}?${params}`);
     const data = await res.json();
+
     if (data.success && data.sources?.length > 0) {
+      console.log(`[RESOLVER] fallback com ${data.sources.length} fonte(s)`);
       return data.sources;
     }
-    return [];
-  } catch (error) {
-    console.error('Resolver error:', error);
-    return [];
+  } catch (err) {
+    console.log('[RESOLVER] fallback também falhou', err);
   }
+
+  return [];
 }
 
-// ─────────────────────────────────────────────
-// Rotação de chaves TMDB com fallback automático
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// TMDB API
+// ─────────────────────────────────────────────────────────────
 const TMDB_API_KEYS = [
-  '9e61081071c195fca2147469bd25690e', // chave principal
-  '9e61081071c195fca2147469bd25690e', // reserva 2
-  '9e61081071c195fca2147469bd25690e', // reserva 3
+  '9e61081071c195fca2147469bd25690e',
+  '9e61081071c195fca2147469bd25690e',
+  '9e61081071c195fca2147469bd25690e',
 ];
 
 let currentKeyIndex = 0;
@@ -61,10 +98,7 @@ const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 function createClient(): AxiosInstance {
   return axios.create({
     baseURL: TMDB_BASE_URL,
-    params: {
-      api_key: getApiKey(),
-      language: 'pt-BR',
-    },
+    params: { api_key: getApiKey(), language: 'pt-BR' },
     timeout: 10000,
   });
 }
@@ -113,27 +147,27 @@ export type Content = Movie | TV;
 
 export const GENRES = {
   movies: [
-    { id: 28, name: 'Ação' },
-    { id: 12, name: 'Aventura' },
-    { id: 35, name: 'Comédia' },
-    { id: 80, name: 'Crime' },
-    { id: 18, name: 'Drama' },
+    { id: 28,    name: 'Ação' },
+    { id: 12,    name: 'Aventura' },
+    { id: 35,    name: 'Comédia' },
+    { id: 80,    name: 'Crime' },
+    { id: 18,    name: 'Drama' },
     { id: 10751, name: 'Família' },
-    { id: 14, name: 'Fantasia' },
-    { id: 27, name: 'Horror' },
-    { id: 9648, name: 'Mistério' },
+    { id: 14,    name: 'Fantasia' },
+    { id: 27,    name: 'Horror' },
+    { id: 9648,  name: 'Mistério' },
     { id: 10749, name: 'Romance' },
-    { id: 878, name: 'Ficção Científica' },
-    { id: 53, name: 'Suspense' },
+    { id: 878,   name: 'Ficção Científica' },
+    { id: 53,    name: 'Suspense' },
   ],
   tv: [
     { id: 10759, name: 'Ação & Aventura' },
-    { id: 16, name: 'Animação' },
-    { id: 35, name: 'Comédia' },
-    { id: 80, name: 'Crime' },
-    { id: 18, name: 'Drama' },
+    { id: 16,    name: 'Animação' },
+    { id: 35,    name: 'Comédia' },
+    { id: 80,    name: 'Crime' },
+    { id: 18,    name: 'Drama' },
     { id: 10751, name: 'Família' },
-    { id: 9648, name: 'Mistério' },
+    { id: 9648,  name: 'Mistério' },
     { id: 10765, name: 'Sci-Fi & Fantasia' },
     { id: 10764, name: 'Reality' },
   ],
@@ -143,22 +177,16 @@ export async function fetchTrendingContent(type: 'movie' | 'tv' = 'movie') {
   try {
     const data = await tmdbRequest(`/trending/${type}/week`, { region: 'BR', language: 'pt-BR' });
     return data?.results || [];
-  } catch (error) {
-    console.error('Erro ao buscar trending:', error);
-    return [];
-  }
+  } catch { return []; }
 }
 
-export async function fetchContentByGenre(type: 'movie' | 'tv' = 'movie', genreId: number, page: number = 1) {
+export async function fetchContentByGenre(type: 'movie' | 'tv' = 'movie', genreId: number, page = 1) {
   try {
     const data = await tmdbRequest(`/discover/${type}`, {
       with_genres: genreId, page, region: 'BR', sort_by: 'popularity.desc', language: 'pt-BR',
     });
     return data?.results || [];
-  } catch (error) {
-    console.error('Erro ao buscar por gênero:', error);
-    return [];
-  }
+  } catch { return []; }
 }
 
 export async function searchContent(query: string, type: 'multi' | 'movie' | 'tv' = 'multi') {
@@ -166,103 +194,72 @@ export async function searchContent(query: string, type: 'multi' | 'movie' | 'tv
     if (!query.trim()) return [];
     const data = await tmdbRequest(`/search/${type}`, { query, page: 1, region: 'BR', language: 'pt-BR' });
     return data?.results || [];
-  } catch (error) {
-    console.error('Erro ao buscar:', error);
-    return [];
-  }
+  } catch { return []; }
 }
 
 export async function fetchContentDetails(type: 'movie' | 'tv', id: number) {
   try {
-    const data = await tmdbRequest(`/${type}/${id}`, {
-      language: 'pt-BR',
-      append_to_response: 'external_ids',
-    });
-    return data;
-  } catch (error) {
-    console.error('Erro ao buscar detalhes:', error);
-    return null;
-  }
+    return await tmdbRequest(`/${type}/${id}`, { language: 'pt-BR', append_to_response: 'external_ids' });
+  } catch { return null; }
 }
 
-export async function fetchDoramas(page: number = 1) {
+export async function fetchDoramas(page = 1) {
   try {
     const data = await tmdbRequest('/discover/tv', {
       with_origin_country: 'KR', page, region: 'BR', sort_by: 'popularity.desc', language: 'pt-BR',
     });
     return data?.results || [];
-  } catch (error) {
-    console.error('Erro ao buscar doramas:', error);
-    return [];
-  }
+  } catch { return []; }
 }
 
-export async function fetchAnimes(page: number = 1) {
+export async function fetchAnimes(page = 1) {
   try {
     const data = await tmdbRequest('/discover/tv', {
       with_genres: 16, with_origin_country: 'JP', page, region: 'BR', sort_by: 'popularity.desc', language: 'pt-BR',
     });
     return data?.results || [];
-  } catch (error) {
-    console.error('Erro ao buscar animes:', error);
-    return [];
-  }
+  } catch { return []; }
 }
 
-export async function fetchDublados(page: number = 1) {
+export async function fetchDublados(page = 1) {
   try {
     const data = await tmdbRequest('/discover/movie', {
       page, region: 'BR', sort_by: 'popularity.desc', language: 'pt-BR',
       with_original_language: 'en', 'release_date.gte': '2015-01-01',
     });
     return data?.results || [];
-  } catch (error) {
-    console.error('Erro ao buscar dublados:', error);
-    return [];
-  }
+  } catch { return []; }
 }
 
-export async function fetchPopularMovies(page: number = 1) {
+export async function fetchPopularMovies(page = 1) {
   try {
     const data = await tmdbRequest('/movie/popular', { page, region: 'BR', language: 'pt-BR' });
     return data?.results || [];
-  } catch (error) {
-    console.error('Erro ao buscar populares:', error);
-    return [];
-  }
+  } catch { return []; }
 }
 
-export async function fetchPopularSeries(page: number = 1) {
+export async function fetchPopularSeries(page = 1) {
   try {
     const data = await tmdbRequest('/tv/popular', { page, language: 'pt-BR' });
     return data?.results || [];
-  } catch (error) {
-    console.error('Erro ao buscar séries populares:', error);
-    return [];
-  }
+  } catch { return []; }
 }
 
-export async function fetchBLs(page: number = 1) {
+export async function fetchBLs(page = 1) {
   try {
     const data = await tmdbRequest('/discover/tv', {
       with_genres: 10749, with_origin_country: 'TH|KR|TW|JP',
       page, sort_by: 'popularity.desc', language: 'pt-BR',
     });
     return data?.results || [];
-  } catch (error) {
-    console.error('Erro ao buscar BLs:', error);
-    return [];
-  }
+  } catch { return []; }
 }
 
-export async function fetchNowPlaying(page: number = 1) {
+export async function fetchNowPlaying(page = 1) {
   try {
     const data = await tmdbRequest('/movie/now_playing', { page, region: 'BR', language: 'pt-BR' });
     return data?.results || [];
-  } catch (error) {
-    console.error('Erro ao buscar em cartaz:', error);
-    return [];
-  }
+  } catch { return []; }
 }
 
 export function getImageUrl(path: string | null, size: 'w185' | 'w342' | 'w500' | 'w780' = 'w342') {
@@ -270,7 +267,6 @@ export function getImageUrl(path: string | null, size: 'w185' | 'w342' | 'w500' 
   return `https://image.tmdb.org/t/p/${size}${path}`;
 }
 
-// Mantido por compatibilidade — use fetchStreamSources() no player
 export function getVidSrcUrl(type: 'movie' | 'tv', id: string | number, seasonNumber?: number, episodeNumber?: number) {
   if (type === 'movie') return `https://vidsrc.to/embed/movie/${id}`;
   return `https://vidsrc.to/embed/tv/${id}/${seasonNumber || 1}/${episodeNumber || 1}`;
