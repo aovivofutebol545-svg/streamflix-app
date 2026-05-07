@@ -6,79 +6,7 @@ import {
 import { WebView } from 'react-native-webview';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { fetchContentDetails } from '../../services/api';
-
-// Prioridade: fontes brasileiras PT-BR primeiro
-function buildSources(
-  type: 'movie' | 'tv',
-  tmdbId: number,
-  imdbId?: string,
-  season = 1,
-  ep = 1
-): { label: string; url: string; ptbr: boolean }[] {
-  const sources: { label: string; url: string; ptbr: boolean }[] = [];
-
-  if (type === 'movie') {
-    // ===== PT-BR PRIMEIRO =====
-    if (imdbId) {
-      sources.push({
-        label: '🇧🇷 SuperFlix',
-        url: `https://superflixapi.dev/filme/${imdbId}`,
-        ptbr: true,
-      });
-      sources.push({
-        label: '🇧🇷 WarezCDN',
-        url: `https://embed.warezcdn.link/filme/${imdbId}`,
-        ptbr: true,
-      });
-      sources.push({
-        label: '🇧🇷 CineHD',
-        url: `https://cinemahdplus.xyz/embed/movie/${imdbId}`,
-        ptbr: true,
-      });
-    }
-    sources.push({
-      label: '🇧🇷 SuperFlix TMDB',
-      url: `https://superflixapi.dev/filme/${tmdbId}`,
-      ptbr: true,
-    });
-
-    // ===== FALLBACK INGLÊS =====
-    if (imdbId) {
-      sources.push({ label: 'VidSrc', url: `https://vidsrc.xyz/embed/movie/${imdbId}`, ptbr: false });
-      sources.push({ label: 'EmbedSU', url: `https://embed.su/embed/movie/${imdbId}`, ptbr: false });
-      sources.push({ label: 'AutoEmbed', url: `https://autoembed.co/movie/imdb/${imdbId}`, ptbr: false });
-      sources.push({ label: 'VidSrc.me', url: `https://vidsrc.me/embed/movie?imdb=${imdbId}`, ptbr: false });
-    }
-    sources.push({ label: 'MultiEmbed', url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`, ptbr: false });
-
-  } else {
-    // ===== SÉRIE PT-BR =====
-    if (imdbId) {
-      sources.push({
-        label: '🇧🇷 SuperFlix',
-        url: `https://superflixapi.dev/serie/${imdbId}/${season}/${ep}`,
-        ptbr: true,
-      });
-      sources.push({
-        label: '🇧🇷 WarezCDN',
-        url: `https://embed.warezcdn.link/serie/${imdbId}/${season}/${ep}`,
-        ptbr: true,
-      });
-    }
-
-    // ===== FALLBACK =====
-    if (imdbId) {
-      sources.push({ label: 'VidSrc', url: `https://vidsrc.xyz/embed/tv/${imdbId}/${season}/${ep}`, ptbr: false });
-      sources.push({ label: 'EmbedSU', url: `https://embed.su/embed/tv/${imdbId}/${season}/${ep}`, ptbr: false });
-      sources.push({ label: 'AutoEmbed', url: `https://autoembed.co/tv/imdb/${imdbId}-${season}-${ep}`, ptbr: false });
-      sources.push({ label: 'VidSrc.me', url: `https://vidsrc.me/embed/tv?imdb=${imdbId}&season=${season}&episode=${ep}`, ptbr: false });
-    }
-    sources.push({ label: 'MultiEmbed', url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1&s=${season}&e=${ep}`, ptbr: false });
-  }
-
-  return sources;
-}
+import { fetchContentDetails, fetchStreamSources } from '../../services/api';
 
 export default function PlayerScreen() {
   const { id, type: paramType, season, episode } = useLocalSearchParams<{
@@ -116,6 +44,7 @@ export default function PlayerScreen() {
       const s = parseInt(season || '1');
       const e = parseInt(episode || '1');
 
+      // Busca detalhes pra obter o IMDB ID
       let details = await fetchContentDetails('movie', parseInt(id || '0'));
       let mediaType: 'movie' | 'tv' = 'movie';
       if (!details?.title) {
@@ -125,7 +54,15 @@ export default function PlayerScreen() {
 
       const imdbId = details?.imdb_id || details?.external_ids?.imdb_id;
       setTitle(details?.title || details?.name || '');
-      const srcs = buildSources(mediaType, parseInt(id || '0'), imdbId, s, e);
+
+      // ── RESOLVER REMOTO — busca fontes via API ──
+      const srcs = await fetchStreamSources(mediaType, parseInt(id || '0'), imdbId, s, e);
+
+      if (!srcs || srcs.length === 0) {
+        setError('Nenhuma fonte disponível no momento.');
+        return;
+      }
+
       setSources(srcs);
       setSrcIndex(0);
     } catch {
