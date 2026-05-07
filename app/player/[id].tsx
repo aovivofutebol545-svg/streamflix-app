@@ -127,10 +127,112 @@ export default function PlayerScreen() {
         userAgent="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
         injectedJavaScript={`
           (function() {
+            // 1. Block window.open() pop-ups
             window.open = function() { return null; };
+            
+            // 2. Override alert/confirm to prevent pop-up dialogs
+            window.alert = function() { return true; };
+            window.confirm = function() { return true; };
+            window.prompt = function() { return ''; };
+            
+            // 3. Aggressive CSS rules for ad elements
             var style = document.createElement('style');
-            style.innerHTML = 'iframe[src*="ads"],div[id*="ad-"],div[class*="ad-banner"],.overlay,.popup{display:none!important}';
+            style.innerHTML = \`
+              /* IFrame ads */
+              iframe[src*="ads"], iframe[src*="ad-"], iframe[src*="advertisement"],
+              iframe[src*="doubleclick"], iframe[src*="googleads"], iframe[id*="ad"],
+              
+              /* Div-based ads */
+              div[id*="ad-"], div[id*="ads"], div[id*="advert"], 
+              div[class*="ad-"], div[class*="ad-banner"], div[class*="advert"],
+              div[class*="advertisement"], div[class*="banner-ad"],
+              
+              /* Common ad container classes */
+              div[class*="overlay"], div[class*="popup"], div[class*="modal"],
+              div[class*="sidebar-ad"], div[class*="floating-ad"],
+              
+              /* Video player ads (pre-roll, mid-roll, post-roll) */
+              div[id*="vast"], div[class*="vast"], div[id*="ima"],
+              div[class*="video-ad"], div[class*="player-ad"],
+              
+              /* Banners and floating elements */
+              div[style*="position:fixed"], div[style*="position: fixed"],
+              .advertisement, .ad-container, .ad-space, .ads,
+              
+              /* SuperFlix / WarezCDN specific patterns */
+              div[onclick*="ad"], div[onclick*="advertisement"],
+              a[href*="click"], a[href*="ad"],
+              
+              /* Pop-up dialogs */
+              div[role="dialog"], div[role="alertdialog"],
+              [class*="pop-up"], [class*="popover"],
+              
+              /* Generic blocking */
+              .floating, .sticky, [data-ad-slot] {
+                display: none !important;
+                visibility: hidden !important;
+                height: 0 !important;
+                width: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                border: 0 !important;
+              }
+              
+              /* Prevent ads from stealing focus */
+              html, body {
+                overflow: auto !important;
+              }
+            \`;
             document.head && document.head.appendChild(style);
+            
+            // 4. Mutation Observer to catch dynamically injected ads
+            var observer = new MutationObserver(function(mutations) {
+              mutations.forEach(function(mutation) {
+                if (mutation.addedNodes.length) {
+                  mutation.addedNodes.forEach(function(node) {
+                    if (node.nodeType === 1) { // Element node
+                      var el = node;
+                      // Check for ad patterns
+                      if (el.id && (el.id.includes('ad') || el.id.includes('popup'))) {
+                        el.style.display = 'none';
+                      }
+                      if (el.className && typeof el.className === 'string' && 
+                          (el.className.includes('ad-') || el.className.includes('overlay') || 
+                           el.className.includes('popup') || el.className.includes('modal'))) {
+                        el.style.display = 'none';
+                      }
+                      if (el.tagName === 'IFRAME') {
+                        var src = el.src || '';
+                        if (src.includes('ad') || src.includes('doubleclick') || src.includes('googleads')) {
+                          el.style.display = 'none';
+                        }
+                      }
+                    }
+                  });
+                }
+              });
+            });
+            
+            observer.observe(document.documentElement, {
+              childList: true,
+              subtree: true,
+              attributes: false,
+              attributeOldValue: false,
+              characterData: false
+            });
+            
+            // 5. Block XMLHttpRequest/fetch calls to ad networks (optional, non-blocking)
+            var originalFetch = window.fetch;
+            window.fetch = function(resource) {
+              var url = typeof resource === 'string' ? resource : resource.url;
+              var adDomains = ['ads', 'doubleclick', 'googleads', 'adserver', 'advertisement'];
+              for (var i = 0; i < adDomains.length; i++) {
+                if (url.includes(adDomains[i])) {
+                  return Promise.resolve(new Response('', { status: 204 }));
+                }
+              }
+              return originalFetch.apply(this, arguments);
+            };
           })();
           true;
         `}
