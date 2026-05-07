@@ -127,48 +127,77 @@ export default function PlayerScreen() {
         userAgent="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
         injectedJavaScript={`
           (function() {
-            // 1. Block window.open() pop-ups
+            // 1. Nuke all pop-ups, alerts, confirms
             window.open = function() { return null; };
-            
-            // 2. Override alert/confirm to prevent pop-up dialogs
             window.alert = function() { return true; };
             window.confirm = function() { return true; };
             window.prompt = function() { return ''; };
             
-            // 3. Aggressive CSS rules for ad elements
+            // 2. Block context menu exploits
+            document.addEventListener('contextmenu', function(e) { e.preventDefault(); return false; }, true);
+            
+            // 3. Override onclick handlers that might trigger ads
+            document.addEventListener('click', function(e) {
+              var target = e.target;
+              if (target && (
+                (target.id && target.id.includes('ad')) ||
+                (target.className && typeof target.className === 'string' && target.className.includes('ad-')) ||
+                (target.href && target.href.includes('click')) ||
+                (target.onclick && target.onclick.toString().includes('ad'))
+              )) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+              }
+            }, true);
+            
+            // 4. Aggressive CSS rules for all ad patterns
             var style = document.createElement('style');
             style.innerHTML = \`
-              /* IFrame ads */
-              iframe[src*="ads"], iframe[src*="ad-"], iframe[src*="advertisement"],
+              /* ALL iframes with ad-like attributes */
+              iframe[src*="ads"], iframe[src*="ad-"], iframe[src*="advert"],
               iframe[src*="doubleclick"], iframe[src*="googleads"], iframe[id*="ad"],
+              iframe[src*="pubnative"], iframe[src*="criteo"], iframe[src*="analytics"],
               
-              /* Div-based ads */
-              div[id*="ad-"], div[id*="ads"], div[id*="advert"], 
+              /* Div ads - all variations */
+              div[id*="ad-"], div[id*="ads"], div[id*="advert"], div[id*="advertisement"],
               div[class*="ad-"], div[class*="ad-banner"], div[class*="advert"],
-              div[class*="advertisement"], div[class*="banner-ad"],
+              div[class*="advertisement"], div[class*="banner-ad"], div[class*="ad-space"],
+              div[class*="ads"], div[class*="advertisement"],
               
-              /* Common ad container classes */
+              /* Floating/Fixed elements */
+              div[style*="position:fixed"], div[style*="position: fixed"],
+              div[class*="fixed"], div[class*="floating"], div[class*="sticky"],
+              
+              /* Pop-ups, modals, overlays */
               div[class*="overlay"], div[class*="popup"], div[class*="modal"],
-              div[class*="sidebar-ad"], div[class*="floating-ad"],
+              div[class*="pop-up"], div[class*="popover"], div[class*="dialog"],
+              div[role="dialog"], div[role="alertdialog"], [role="presentation"],
               
-              /* Video player ads (pre-roll, mid-roll, post-roll) */
+              /* Video player ad containers */
               div[id*="vast"], div[class*="vast"], div[id*="ima"],
               div[class*="video-ad"], div[class*="player-ad"],
+              div[id*="vmap"], div[class*="ads-container"],
               
-              /* Banners and floating elements */
-              div[style*="position:fixed"], div[style*="position: fixed"],
-              .advertisement, .ad-container, .ad-space, .ads,
-              
-              /* SuperFlix / WarezCDN specific patterns */
+              /* SuperFlix/WarezCDN specific */
+              .ad-overlay, .ad-modal, .ad-banner, .promo-banner,
               div[onclick*="ad"], div[onclick*="advertisement"],
-              a[href*="click"], a[href*="ad"],
+              a[href*="click?"], a[href*="ad?"],
               
-              /* Pop-up dialogs */
-              div[role="dialog"], div[role="alertdialog"],
-              [class*="pop-up"], [class*="popover"],
+              /* Common ad networks */
+              [data-ad-slot], [data-ad-client], [data-ad-format],
+              
+              /* Native ads */
+              .sponsored, .promotions, [data-native-ad],
+              
+              /* Sidebar/banner ads */
+              div[class*="sidebar"], div[class*="banner"], div[class*="skyscraper"],
+              
+              /* Flash ads (legacy) */
+              embed[type*="flash"], object[data*="ad"],
               
               /* Generic blocking */
-              .floating, .sticky, [data-ad-slot] {
+              .advertisement, .adsbygoogle {
                 display: none !important;
                 visibility: hidden !important;
                 height: 0 !important;
@@ -176,36 +205,75 @@ export default function PlayerScreen() {
                 margin: 0 !important;
                 padding: 0 !important;
                 border: 0 !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
               }
               
-              /* Prevent ads from stealing focus */
-              html, body {
+              /* Unblock main content */
+              html, body, main, video, player, [role="main"] {
                 overflow: auto !important;
+                height: auto !important;
+              }
+              
+              /* Prevent overlay cover */
+              body > * {
+                z-index: auto !important;
               }
             \`;
             document.head && document.head.appendChild(style);
             
-            // 4. Mutation Observer to catch dynamically injected ads
+            // 5. Mutation Observer for dynamic ad injection
+            var blockList = ['ad', 'ads', 'advert', 'popup', 'overlay', 'modal', 'vast', 'ima', 'banner'];
             var observer = new MutationObserver(function(mutations) {
               mutations.forEach(function(mutation) {
                 if (mutation.addedNodes.length) {
                   mutation.addedNodes.forEach(function(node) {
                     if (node.nodeType === 1) { // Element node
                       var el = node;
-                      // Check for ad patterns
-                      if (el.id && (el.id.includes('ad') || el.id.includes('popup'))) {
-                        el.style.display = 'none';
-                      }
-                      if (el.className && typeof el.className === 'string' && 
-                          (el.className.includes('ad-') || el.className.includes('overlay') || 
-                           el.className.includes('popup') || el.className.includes('modal'))) {
-                        el.style.display = 'none';
-                      }
-                      if (el.tagName === 'IFRAME') {
-                        var src = el.src || '';
-                        if (src.includes('ad') || src.includes('doubleclick') || src.includes('googleads')) {
-                          el.style.display = 'none';
+                      var isAd = false;
+                      
+                      // Check ID
+                      if (el.id) {
+                        for (var i = 0; i < blockList.length; i++) {
+                          if (el.id.toLowerCase().includes(blockList[i])) {
+                            isAd = true;
+                            break;
+                          }
                         }
+                      }
+                      
+                      // Check className
+                      if (!isAd && el.className && typeof el.className === 'string') {
+                        var className = el.className.toLowerCase();
+                        for (var i = 0; i < blockList.length; i++) {
+                          if (className.includes(blockList[i])) {
+                            isAd = true;
+                            break;
+                          }
+                        }
+                      }
+                      
+                      // Check iframe src
+                      if (!isAd && el.tagName === 'IFRAME') {
+                        var src = (el.src || '').toLowerCase();
+                        if (src.includes('ad') || src.includes('doubleclick') || src.includes('googleads') || 
+                            src.includes('analytics') || src.includes('criteo')) {
+                          isAd = true;
+                        }
+                      }
+                      
+                      // Check style position:fixed
+                      if (!isAd && el.style) {
+                        var pos = el.style.position || '';
+                        if (pos.includes('fixed')) {
+                          isAd = true;
+                        }
+                      }
+                      
+                      if (isAd) {
+                        el.style.display = 'none !important';
+                        el.style.visibility = 'hidden';
+                        el.remove ? el.remove() : el.parentNode && el.parentNode.removeChild(el);
                       }
                     }
                   });
@@ -216,23 +284,65 @@ export default function PlayerScreen() {
             observer.observe(document.documentElement, {
               childList: true,
               subtree: true,
-              attributes: false,
-              attributeOldValue: false,
-              characterData: false
+              attributes: true,
+              attributeFilter: ['id', 'class', 'style'],
             });
             
-            // 5. Block XMLHttpRequest/fetch calls to ad networks (optional, non-blocking)
+            // 6. Block XMLHttpRequest to ad domains
             var originalFetch = window.fetch;
             window.fetch = function(resource) {
-              var url = typeof resource === 'string' ? resource : resource.url;
-              var adDomains = ['ads', 'doubleclick', 'googleads', 'adserver', 'advertisement'];
-              for (var i = 0; i < adDomains.length; i++) {
-                if (url.includes(adDomains[i])) {
+              var url = typeof resource === 'string' ? resource : (resource.url || '');
+              url = url.toLowerCase();
+              
+              var blockedDomains = [
+                'ads', 'ad-', 'doubleclick', 'googleads', 'adserver', 'advertisement',
+                'analytics', 'criteo', 'pubnative', 'appnexus', 'bidder',
+                'adswizz', 'auditude', 'vmap', 'ima'
+              ];
+              
+              for (var i = 0; i < blockedDomains.length; i++) {
+                if (url.includes(blockedDomains[i])) {
+                  console.log('Blocked fetch to:', url);
                   return Promise.resolve(new Response('', { status: 204 }));
                 }
               }
+              
               return originalFetch.apply(this, arguments);
             };
+            
+            // 7. Block XMLHttpRequest
+            if (window.XMLHttpRequest) {
+              var originalOpen = window.XMLHttpRequest.prototype.open;
+              window.XMLHttpRequest.prototype.open = function(method, url) {
+                url = url.toLowerCase();
+                var blockedDomains = [
+                  'ads', 'ad-', 'doubleclick', 'googleads', 'adserver', 'advertisement',
+                  'analytics', 'criteo', 'pubnative', 'appnexus', 'bidder',
+                  'adswizz', 'auditude', 'vmap', 'ima'
+                ];
+                
+                for (var i = 0; i < blockedDomains.length; i++) {
+                  if (url.includes(blockedDomains[i])) {
+                    console.log('Blocked XHR to:', url);
+                    return;
+                  }
+                }
+                
+                return originalOpen.apply(this, arguments);
+              };
+            }
+            
+            // 8. Remove ad-related scripts
+            var scripts = document.querySelectorAll('script');
+            scripts.forEach(function(script) {
+              var src = (script.src || '').toLowerCase();
+              var text = (script.textContent || '').toLowerCase();
+              
+              if (src.includes('ad') || src.includes('analytics') || 
+                  text.includes('adservice') || text.includes('gpt') || text.includes('doubleclick')) {
+                script.remove ? script.remove() : script.parentNode && script.parentNode.removeChild(script);
+              }
+            });
           })();
           true;
         `}
