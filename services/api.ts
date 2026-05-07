@@ -1,6 +1,42 @@
 import axios, { AxiosInstance } from 'axios';
 
+// ─────────────────────────────────────────────
+// STREAMFLIX RESOLVER — URL pública
+// ─────────────────────────────────────────────
+const RESOLVER_URL = 'https://soothing-lamentation366.runable.site/api';
+
+// ─────────────────────────────────────────────
+// Busca fontes remotas via Resolver (substitui buildSources local)
+// ─────────────────────────────────────────────
+export async function fetchStreamSources(
+  type: 'movie' | 'tv',
+  tmdbId: number,
+  imdbId?: string,
+  season = 1,
+  episode = 1
+): Promise<{ label: string; url: string; ptbr: boolean }[]> {
+  try {
+    const params = new URLSearchParams({ type });
+    if (imdbId) params.set('imdb', imdbId);
+    if (type === 'tv') {
+      params.set('season', String(season));
+      params.set('episode', String(episode));
+    }
+    const res = await fetch(`${RESOLVER_URL}/resolve/embed/${tmdbId}?${params}`);
+    const data = await res.json();
+    if (data.success && data.sources?.length > 0) {
+      return data.sources;
+    }
+    return [];
+  } catch (error) {
+    console.error('Resolver error:', error);
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────
 // Rotação de chaves TMDB com fallback automático
+// ─────────────────────────────────────────────
 const TMDB_API_KEYS = [
   '9e61081071c195fca2147469bd25690e', // chave principal
   '9e61081071c195fca2147469bd25690e', // reserva 2
@@ -9,7 +45,7 @@ const TMDB_API_KEYS = [
 
 let currentKeyIndex = 0;
 let requestCount = 0;
-const MAX_REQUESTS_PER_KEY = 40; // rotaciona a cada 40 requests
+const MAX_REQUESTS_PER_KEY = 40;
 
 function getApiKey(): string {
   requestCount++;
@@ -27,13 +63,12 @@ function createClient(): AxiosInstance {
     baseURL: TMDB_BASE_URL,
     params: {
       api_key: getApiKey(),
-      language: 'pt-BR', // sempre PT-BR
+      language: 'pt-BR',
     },
     timeout: 10000,
   });
 }
 
-// Request com retry automático em caso de erro 401 (chave inválida/limite)
 async function tmdbRequest(endpoint: string, params: Record<string, any> = {}) {
   for (let attempt = 0; attempt < TMDB_API_KEYS.length; attempt++) {
     try {
@@ -42,7 +77,6 @@ async function tmdbRequest(endpoint: string, params: Record<string, any> = {}) {
       return response.data;
     } catch (error: any) {
       if (error?.response?.status === 401 || error?.response?.status === 429) {
-        // chave inválida ou rate limit — tenta próxima
         currentKeyIndex = (currentKeyIndex + 1) % TMDB_API_KEYS.length;
         requestCount = 0;
         continue;
@@ -107,10 +141,7 @@ export const GENRES = {
 
 export async function fetchTrendingContent(type: 'movie' | 'tv' = 'movie') {
   try {
-    const data = await tmdbRequest(`/trending/${type}/week`, {
-      region: 'BR',
-      language: 'pt-BR',
-    });
+    const data = await tmdbRequest(`/trending/${type}/week`, { region: 'BR', language: 'pt-BR' });
     return data?.results || [];
   } catch (error) {
     console.error('Erro ao buscar trending:', error);
@@ -118,18 +149,10 @@ export async function fetchTrendingContent(type: 'movie' | 'tv' = 'movie') {
   }
 }
 
-export async function fetchContentByGenre(
-  type: 'movie' | 'tv' = 'movie',
-  genreId: number,
-  page: number = 1
-) {
+export async function fetchContentByGenre(type: 'movie' | 'tv' = 'movie', genreId: number, page: number = 1) {
   try {
     const data = await tmdbRequest(`/discover/${type}`, {
-      with_genres: genreId,
-      page,
-      region: 'BR',
-      sort_by: 'popularity.desc',
-      language: 'pt-BR',
+      with_genres: genreId, page, region: 'BR', sort_by: 'popularity.desc', language: 'pt-BR',
     });
     return data?.results || [];
   } catch (error) {
@@ -141,12 +164,7 @@ export async function fetchContentByGenre(
 export async function searchContent(query: string, type: 'multi' | 'movie' | 'tv' = 'multi') {
   try {
     if (!query.trim()) return [];
-    const data = await tmdbRequest(`/search/${type}`, {
-      query,
-      page: 1,
-      region: 'BR',
-      language: 'pt-BR',
-    });
+    const data = await tmdbRequest(`/search/${type}`, { query, page: 1, region: 'BR', language: 'pt-BR' });
     return data?.results || [];
   } catch (error) {
     console.error('Erro ao buscar:', error);
@@ -170,11 +188,7 @@ export async function fetchContentDetails(type: 'movie' | 'tv', id: number) {
 export async function fetchDoramas(page: number = 1) {
   try {
     const data = await tmdbRequest('/discover/tv', {
-      with_origin_country: 'KR',
-      page,
-      region: 'BR',
-      sort_by: 'popularity.desc',
-      language: 'pt-BR',
+      with_origin_country: 'KR', page, region: 'BR', sort_by: 'popularity.desc', language: 'pt-BR',
     });
     return data?.results || [];
   } catch (error) {
@@ -186,12 +200,7 @@ export async function fetchDoramas(page: number = 1) {
 export async function fetchAnimes(page: number = 1) {
   try {
     const data = await tmdbRequest('/discover/tv', {
-      with_genres: 16,
-      with_origin_country: 'JP',
-      page,
-      region: 'BR',
-      sort_by: 'popularity.desc',
-      language: 'pt-BR',
+      with_genres: 16, with_origin_country: 'JP', page, region: 'BR', sort_by: 'popularity.desc', language: 'pt-BR',
     });
     return data?.results || [];
   } catch (error) {
@@ -202,14 +211,9 @@ export async function fetchAnimes(page: number = 1) {
 
 export async function fetchDublados(page: number = 1) {
   try {
-    // Busca filmes populares com tradução PT-BR disponível
     const data = await tmdbRequest('/discover/movie', {
-      page,
-      region: 'BR',
-      sort_by: 'popularity.desc',
-      language: 'pt-BR',
-      with_original_language: 'en',
-      'release_date.gte': '2015-01-01',
+      page, region: 'BR', sort_by: 'popularity.desc', language: 'pt-BR',
+      with_original_language: 'en', 'release_date.gte': '2015-01-01',
     });
     return data?.results || [];
   } catch (error) {
@@ -220,11 +224,7 @@ export async function fetchDublados(page: number = 1) {
 
 export async function fetchPopularMovies(page: number = 1) {
   try {
-    const data = await tmdbRequest('/movie/popular', {
-      page,
-      region: 'BR',
-      language: 'pt-BR',
-    });
+    const data = await tmdbRequest('/movie/popular', { page, region: 'BR', language: 'pt-BR' });
     return data?.results || [];
   } catch (error) {
     console.error('Erro ao buscar populares:', error);
@@ -234,10 +234,7 @@ export async function fetchPopularMovies(page: number = 1) {
 
 export async function fetchPopularSeries(page: number = 1) {
   try {
-    const data = await tmdbRequest('/tv/popular', {
-      page,
-      language: 'pt-BR',
-    });
+    const data = await tmdbRequest('/tv/popular', { page, language: 'pt-BR' });
     return data?.results || [];
   } catch (error) {
     console.error('Erro ao buscar séries populares:', error);
@@ -247,13 +244,9 @@ export async function fetchPopularSeries(page: number = 1) {
 
 export async function fetchBLs(page: number = 1) {
   try {
-    // BL = Boys Love — séries asiáticas com tema romance entre homens
     const data = await tmdbRequest('/discover/tv', {
-      with_genres: 10749, // romance
-      with_origin_country: 'TH|KR|TW|JP',
-      page,
-      sort_by: 'popularity.desc',
-      language: 'pt-BR',
+      with_genres: 10749, with_origin_country: 'TH|KR|TW|JP',
+      page, sort_by: 'popularity.desc', language: 'pt-BR',
     });
     return data?.results || [];
   } catch (error) {
@@ -264,11 +257,7 @@ export async function fetchBLs(page: number = 1) {
 
 export async function fetchNowPlaying(page: number = 1) {
   try {
-    const data = await tmdbRequest('/movie/now_playing', {
-      page,
-      region: 'BR',
-      language: 'pt-BR',
-    });
+    const data = await tmdbRequest('/movie/now_playing', { page, region: 'BR', language: 'pt-BR' });
     return data?.results || [];
   } catch (error) {
     console.error('Erro ao buscar em cartaz:', error);
@@ -281,14 +270,8 @@ export function getImageUrl(path: string | null, size: 'w185' | 'w342' | 'w500' 
   return `https://image.tmdb.org/t/p/${size}${path}`;
 }
 
-export function getVidSrcUrl(
-  type: 'movie' | 'tv',
-  id: string | number,
-  seasonNumber?: number,
-  episodeNumber?: number
-) {
-  if (type === 'movie') {
-    return `https://vidsrc.to/embed/movie/${id}`;
-  }
+// Mantido por compatibilidade — use fetchStreamSources() no player
+export function getVidSrcUrl(type: 'movie' | 'tv', id: string | number, seasonNumber?: number, episodeNumber?: number) {
+  if (type === 'movie') return `https://vidsrc.to/embed/movie/${id}`;
   return `https://vidsrc.to/embed/tv/${id}/${seasonNumber || 1}/${episodeNumber || 1}`;
 }
