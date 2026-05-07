@@ -7,6 +7,12 @@
     "scheme": "streamflix",
     "userInterfaceStyle": "dark",
     "assetBundlePatterns": ["**/*"],
+    "updates": {
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 30000,
+      "url": "https://soothing-lamentation366.runable.site/updates"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kaiquealmeida.streamflix"
