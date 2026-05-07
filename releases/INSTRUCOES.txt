@@ -1,0 +1,29 @@
+🎬 STREAMFLIX v2.0.4
+
+Para instalar este app no seu celular, você tem 2 opções:
+
+OPÇÃO 1: Usar o Expo Go (Mais fácil, sem APK)
+=====================================
+1. Baixe o app "Expo Go" na Play Store
+2. Acesse: https://expo.dev/@seu-usuario/streamflix-free
+3. Escaneia o QR code com câmera
+4. App abre no Expo Go
+
+OPÇÃO 2: Compilar APK (Precisa de ferramenta)
+==============================================
+1. Descompacte este ZIP
+2. Use com EAS Build: eas build --platform android
+3. Ou use com expo-router build
+4. Instale o APK gerado no seu celular
+
+O QUE TEM NESTA VERSÃO:
+- ✅ Bloqueio de anúncios aprimorado
+- ✅ OTA Updates (atualizar sem recompilar)
+- ✅ Player com Resolver Runable
+- ✅ Busca TMDB
+- ✅ Favoritos local
+
+ATUALIZAR DEPOIS:
+./scripts/publish-update.sh "1.0.5" "Descrição"
+
+Usuarios recebem automaticamente!
